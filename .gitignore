@@ -1,0 +1,29 @@
+# Ignore target directories
+/target
+/migration/target
+
+# Ignore build artifacts
+**/*.rlib
+**/*.dSYM
+*.so
+*.dylib
+*.dll
+
+# Ignore dependency folder
+Cargo.lock
+Cargo.toml.orig
+
+# Ignore editor and OS-specific files
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.rs.bk
+*.bak
+
+# Ignore dotenv files (optional)
+/.env
+.env.*
+
