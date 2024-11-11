@@ -155,7 +155,7 @@ impl TopupServiceTrait for TopupService {
                 validation_err,
             )));
         }
-
+    
         // Verify user exists
         let _user = self
             .user_repository
@@ -167,101 +167,105 @@ impl TopupServiceTrait for TopupService {
                     input.user_id
                 )))
             })?;
-
-        // Create topup record first
+    
+        // Create topup record
         let topup = self
             .topup_repository
             .create(&input)
             .await
             .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
-
-        // Get user's current saldo
-        let saldo = self
-            .saldo_repository
-            .find_by_user_id(input.user_id)
-            .await
-            .map_err(|_| {
-                ErrorResponse::from(AppError::NotFound(format!(
-                    "Saldo with user_id {} not found",
-                    input.user_id
-                )))
-            })?;
-
-        // Handle saldo update
-        match saldo {
-            Some(current_saldo) => {
-                // Calculate new balance by adding topup amount
+    
+        // Attempt to get user's current saldo
+        match self.saldo_repository.find_by_user_id(input.user_id).await {
+            Ok(Some(current_saldo)) => {
+                // Calculate new balance
                 let request = UpdateSaldoBalance {
                     user_id: input.user_id,
-                    withdraw_amount: None, 
-                    withdraw_time: None,  
+                    withdraw_amount: None,
+                    withdraw_time: None,
                     total_balance: current_saldo.total_balance + topup.topup_amount,
                 };
-
-                // Update saldo balance
+    
+                // Update saldo
                 if let Err(db_err) = self.saldo_repository.update_balance(&request).await {
-                    // If saldo update fails, rollback topup creation
                     error!("Failed to update saldo balance: {}", db_err);
-                    self.topup_repository
-                        .delete(topup.topup_id)
-                        .await
-                        .map_err(AppError::from)
-                        .map_err(ErrorResponse::from)?;
-
+                    
+                    // Rollback topup creation on failure
+                    if let Err(rb_err) = self.topup_repository.delete(topup.topup_id).await {
+                        error!("Failed to rollback topup: {}", rb_err);
+                    }
+    
                     return Err(ErrorResponse::from(AppError::from(db_err)));
                 }
-
-                info!(
-                    "Topup successful: Amount {} for user_id {}",
-                    topup.topup_amount, input.user_id
-                );
             }
-            None => {
-                // If no saldo exists, create new saldo record with topup amount as initial balance
+            Ok(None) => {
+                // Create initial saldo if none exists
                 let create_saldo_request = CreateSaldoRequest {
                     user_id: input.user_id,
                     total_balance: topup.topup_amount,
                 };
-
+    
                 if let Err(db_err) = self.saldo_repository.create(&create_saldo_request).await {
-                    // If saldo creation fails, rollback topup creation
                     error!("Failed to create initial saldo: {}", db_err);
-                    self.topup_repository
-                        .delete(topup.topup_id)
-                        .await
-                        .map_err(AppError::from)
-                        .map_err(ErrorResponse::from)?;
-
+    
+                    // Rollback topup creation on failure
+                    if let Err(rb_err) = self.topup_repository.delete(topup.topup_id).await {
+                        error!("Failed to rollback topup: {}", rb_err);
+                    }
+    
                     return Err(ErrorResponse::from(AppError::from(db_err)));
                 }
-
-                info!(
-                    "Created initial saldo with topup amount {} for user_id {}",
-                    topup.topup_amount, input.user_id
-                );
+            }
+            Err(_) => {
+                error!("Failed to retrieve saldo for user {}", input.user_id);
+                
+                // Rollback topup creation on failure
+                if let Err(rb_err) = self.topup_repository.delete(topup.topup_id).await {
+                    error!("Failed to rollback topup: {}", rb_err);
+                }
+    
+                return Err(ErrorResponse::from(AppError::NotFound(format!(
+                    "Saldo with user_id {} not found",
+                    input.user_id
+                ))));
             }
         }
-
+    
+        // Return success response
         Ok(ApiResponse {
             status: "success".to_string(),
             message: "Topup created successfully".to_string(),
             data: TopupResponse::from(topup),
         })
     }
+    
 
     async fn update_topup(
         &self,
         input: &UpdateTopupRequest,
     ) -> Result<ApiResponse<Option<TopupResponse>>, ErrorResponse> {
+        // Validate input
         if let Err(validation_err) = input.validate() {
             error!("Validation failed for topup update: {}", validation_err);
             return Err(ErrorResponse::from(AppError::ValidationError(
                 validation_err,
             )));
         }
-
-        // find user id
+    
+        // Check if topup exists
+        let existing_topup = self
+            .topup_repository
+            .find_by_id(input.topup_id)
+            .await
+            .map_err(|_| {
+                ErrorResponse::from(AppError::NotFound(format!(
+                    "Topup with id {} not found",
+                    input.topup_id
+                )))
+            })?;
+    
+        // Check if the user exists
         let _user = self
             .user_repository
             .find_by_id(input.user_id)
@@ -272,79 +276,62 @@ impl TopupServiceTrait for TopupService {
                     input.user_id
                 )))
             })?;
-
-        let saldo = self
-            .saldo_repository
-            .find_by_user_id(input.user_id)
-            .await
-            .map_err(|_| {
-                ErrorResponse::from(AppError::NotFound(format!(
-                    "Saldo with user id {} not found",
-                    input.user_id
-                )))
-            })?;
-
-        let existing_topup = self
-            .topup_repository
-            .find_by_id(input.topup_id)
-            .await
-            .map_err(|_| {
-                ErrorResponse::from(AppError::NotFound(format!(
-                    "Topup with id {} not found",
-                    input.user_id
-                )))
-            })?;
-
-        match existing_topup {
-            Some(ref topup) => {
-                let updated_saldo = self
-                    .topup_repository
-                    .update(input)
-                    .await
-                    .map_err(AppError::from)
-                    .map_err(ErrorResponse::from)?;
-
-                info!("Topup updated successfully for id: {}", input.topup_id);
-
+    
+        
+        let amount_difference = input.topup_amount - existing_topup.unwrap().topup_amount;
+    
+        // Retrieve and update saldo
+        match self.saldo_repository.find_by_user_id(input.user_id).await {
+            Ok(Some(current_saldo)) => {
+                // Calculate new balance
                 let request = UpdateSaldoBalance {
                     user_id: input.user_id,
-                    withdraw_amount: None, 
-                    withdraw_time: None,  
-                    total_balance: saldo.unwrap().total_balance - topup.topup_amount, 
+                    withdraw_amount: None,
+                    withdraw_time: None,
+                    total_balance: current_saldo.total_balance + amount_difference,
                 };
-
-                
+    
+                // Update saldo balance
                 if let Err(db_err) = self.saldo_repository.update_balance(&request).await {
                     error!("Failed to update saldo balance: {}", db_err);
-                    self.topup_repository
-                        .delete(topup.topup_id) 
-                        .await
-                        .map_err(AppError::from)
-                        .map_err(ErrorResponse::from)?;
-
+    
                     return Err(ErrorResponse::from(AppError::from(db_err)));
                 }
-
-                info!(
-                    "Topup successful: Amount {} for user_id {}",
-                    topup.topup_amount, input.user_id
-                );
-
-                Ok(ApiResponse {
-                    status: "success".to_string(),
-                    message: "Topup updated successfully".to_string(),
-                    data: Some(TopupResponse::from(updated_saldo)),
-                })
             }
-            None => {
-                error!("Topup with id {} not found", input.topup_id);
-                Err(ErrorResponse::from(AppError::NotFound(format!(
-                    "Topup with id {} not found",
-                    input.topup_id
-                ))))
+            Ok(None) => {
+                error!("Saldo with user_id {} not found", input.user_id);
+                return Err(ErrorResponse::from(AppError::NotFound(format!(
+                    "Saldo with user_id {} not found",
+                    input.user_id
+                ))));
+            }
+            Err(_) => {
+                error!("Failed to retrieve saldo for user {}", input.user_id);
+                return Err(ErrorResponse::from(AppError::NotFound("Failed to retrieve saldo".to_string())));
             }
         }
+    
+        // Update the topup record
+        let updated_topup = self
+            .topup_repository
+            .update(input)
+            .await
+            .map_err(AppError::from)
+            .map_err(ErrorResponse::from)?;
+    
+        info!(
+            "Topup update successful: Updated amount to {} for topup_id {}",
+            updated_topup.topup_amount, input.topup_id
+        );
+    
+        // Return success response
+        Ok(ApiResponse {
+            status: "success".to_string(),
+            message: "Topup updated successfully".to_string(),
+            data: Some(TopupResponse::from(updated_topup)),
+        })
     }
+    
 
     async fn delete_topup(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse> {
         let user = self.user_repository.find_by_id(id).await.map_err(|_| {

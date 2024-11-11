@@ -144,6 +144,13 @@ impl SaldoServiceTrait for SaldoService {
         &self,
         input: &CreateSaldoRequest,
     ) -> Result<ApiResponse<SaldoResponse>, ErrorResponse> {
+        if let Err(validation_err) = input.validate() {
+            error!("Validation failed for saldo create: {}", validation_err);
+            return Err(ErrorResponse::from(AppError::ValidationError(
+                validation_err,
+            )));
+        }
+
         let _user = self
             .user_repository
             .find_by_id(input.user_id)
@@ -157,12 +164,7 @@ impl SaldoServiceTrait for SaldoService {
 
         info!("Saldo created successfully for user_id: {}", input.user_id);
 
-        if let Err(validation_err) = input.validate() {
-            error!("Validation failed for saldo create: {}", validation_err);
-            return Err(ErrorResponse::from(AppError::ValidationError(
-                validation_err,
-            )));
-        }
+        
 
         let saldo = self
             .saldo_repository
@@ -182,6 +184,13 @@ impl SaldoServiceTrait for SaldoService {
         &self,
         input: &UpdateSaldoRequest,
     ) -> Result<ApiResponse<Option<SaldoResponse>>, ErrorResponse> {
+        if let Err(validation_err) = input.validate() {
+            error!("Validation failed for saldo update: {}", validation_err);
+            return Err(ErrorResponse::from(AppError::ValidationError(
+                validation_err,
+            )));
+        }
+
         let _user = self
             .user_repository
             .find_by_id(input.user_id)
@@ -202,13 +211,6 @@ impl SaldoServiceTrait for SaldoService {
 
         match existing_saldo {
             Some(_) => {
-                if let Err(validation_err) = input.validate() {
-                    error!("Validation failed for saldo update: {}", validation_err);
-                    return Err(ErrorResponse::from(AppError::ValidationError(
-                        validation_err,
-                    )));
-                }
-
                 let updated_saldo = self
                     .saldo_repository
                     .update(input)

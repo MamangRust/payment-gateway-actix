@@ -34,7 +34,7 @@ impl TopupRepositoryTrait for TopupRepository {
         .filter(topups::Column::UserId.eq(id))
         .all(&self.db_pool)
         .await
-        .map(|res| res.into_iter().map(Some).collect()) // Wrap each result in `Some` to match `Vec<Option<saldo::Model>>`
+        .map(|res| res.into_iter().map(Some).collect()) 
     }
 
     

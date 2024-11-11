@@ -10,7 +10,7 @@ use crate::{
     domain::{
         request::{
             saldo::UpdateSaldoBalance,
-            transfer::{CreateTransferRequest, UpdateTransferAmountRequest, UpdateTransferRequest},
+            transfer::{CreateTransferRequest, UpdateTransferRequest},
         },
         response::{transfer::TransferResponse, ApiResponse, ErrorResponse},
     },
@@ -62,7 +62,7 @@ impl TransferServiceTrait for TransferService {
     async fn get_transfer(
         &self,
         id: i32,
-    ) -> Result<ApiResponse<Option<TransferResponse>>, ErrorResponse>{
+    ) -> Result<ApiResponse<Option<TransferResponse>>, ErrorResponse> {
         let transfer = self
             .transfer_repository
             .find_by_id(id)
@@ -91,33 +91,25 @@ impl TransferServiceTrait for TransferService {
         let _user = self.user_repository.find_by_id(id).await.map_err(|_| {
             ErrorResponse::from(AppError::NotFound(format!("User with id {} not found", id)))
         })?;
-    
-       
+
         let transfer = self
             .transfer_repository
             .find_by_users(id)
             .await
             .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
-    
-        
-        let transfer_response: Option<Vec<TransferResponse>> = transfer.map(|transfers| {
-            transfers
-                .into_iter()
-                .map(TransferResponse::from)
-                .collect()
-        });
-    
-        
+
+        let transfer_response: Option<Vec<TransferResponse>> =
+            transfer.map(|transfers| transfers.into_iter().map(TransferResponse::from).collect());
+
         let response = ApiResponse {
             status: "success".to_string(),
             data: transfer_response,
             message: "Success".to_string(),
         };
-    
+
         Ok(response)
     }
-    
 
     async fn get_transfer_user(
         &self,
@@ -155,6 +147,7 @@ impl TransferServiceTrait for TransferService {
             )));
         }
 
+        // Check if sender and receiver exist
         self.user_repository
             .find_by_id(input.transfer_from)
             .await
@@ -175,6 +168,7 @@ impl TransferServiceTrait for TransferService {
                 )))
             })?;
 
+        // Create the transfer
         let transfer = self
             .transfer_repository
             .create(&input)
@@ -182,7 +176,7 @@ impl TransferServiceTrait for TransferService {
             .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
-        // sender Saldo
+        // Sender's saldo adjustment
         let sender_saldo = self
             .saldo_repository
             .find_by_user_id(input.transfer_from)
@@ -194,12 +188,11 @@ impl TransferServiceTrait for TransferService {
                 )))
             })?;
 
-        // sender balance
         let sender_balance = sender_saldo.unwrap().total_balance - input.transfer_amount;
 
         let request_sender_balance = UpdateSaldoBalance {
-            withdraw_amount: None, 
-            withdraw_time: None,  
+            withdraw_amount: None,
+            withdraw_time: None,
             user_id: input.transfer_from,
             total_balance: sender_balance,
         };
@@ -209,9 +202,9 @@ impl TransferServiceTrait for TransferService {
             .update_balance(&request_sender_balance)
             .await
         {
-            error!("Failed to update saldo balance sender: {}", db_err);
+            error!("Failed to update saldo balance for sender: {}", db_err);
             self.transfer_repository
-                .delete(input.transfer_from)
+                .delete(transfer.transfer_id) // Corrected rollback
                 .await
                 .map_err(AppError::from)
                 .map_err(ErrorResponse::from)?;
@@ -219,10 +212,10 @@ impl TransferServiceTrait for TransferService {
             return Err(ErrorResponse::from(AppError::from(db_err)));
         }
 
-        // receiver saldo
+        // Receiver's saldo adjustment
         let receiver_saldo = self
             .saldo_repository
-            .find_by_user_id(input.transfer_from)
+            .find_by_user_id(input.transfer_to) // Corrected to use transfer_to
             .await
             .map_err(|_| {
                 ErrorResponse::from(AppError::NotFound(format!(
@@ -231,13 +224,11 @@ impl TransferServiceTrait for TransferService {
                 )))
             })?;
 
-        // receiver saldo
         let receiver_balance = receiver_saldo.unwrap().total_balance + input.transfer_amount;
 
-        // request receiver saldo
         let request_receiver_balance = UpdateSaldoBalance {
-            withdraw_amount: None, 
-            withdraw_time: None,  
+            withdraw_amount: None,
+            withdraw_time: None,
             user_id: input.transfer_to,
             total_balance: receiver_balance,
         };
@@ -247,9 +238,9 @@ impl TransferServiceTrait for TransferService {
             .update_balance(&request_receiver_balance)
             .await
         {
-            error!("Failed to update saldo balance receiver: {}", db_err);
+            error!("Failed to update saldo balance for receiver: {}", db_err);
             self.transfer_repository
-                .delete(input.transfer_to)
+                .delete(transfer.transfer_id) // Corrected rollback
                 .await
                 .map_err(AppError::from)
                 .map_err(ErrorResponse::from)?;
@@ -268,36 +259,35 @@ impl TransferServiceTrait for TransferService {
         &self,
         input: &UpdateTransferRequest,
     ) -> Result<ApiResponse<Option<TransferResponse>>, ErrorResponse> {
-        // Validate input
         if let Err(validation_err) = input.validate() {
-            error!("Validation failed for transfer update: {}", validation_err);
-            return Err(ErrorResponse::from(AppError::ValidationError(validation_err)));
+            error!("Validation failed for transfer create: {}", validation_err);
+            return Err(ErrorResponse::from(AppError::ValidationError(
+                validation_err,
+            )));
         }
     
         // Check if sender and receiver exist
-        let _sender = self
-            .user_repository
+        self.user_repository
             .find_by_id(input.transfer_from)
             .await
             .map_err(|_| {
                 ErrorResponse::from(AppError::NotFound(format!(
-                    "User with id {} not found",
+                    "Sender with id {} not found",
                     input.transfer_from
                 )))
             })?;
     
-        let _receiver = self
-            .user_repository
+        self.user_repository
             .find_by_id(input.transfer_to)
             .await
             .map_err(|_| {
                 ErrorResponse::from(AppError::NotFound(format!(
-                    "User with id {} not found",
+                    "Receiver with id {} not found",
                     input.transfer_to
                 )))
             })?;
     
-        // Find and verify existing transfer
+        // Get the existing transfer record
         let existing_transfer = self
             .transfer_repository
             .find_by_id(input.transfer_id)
@@ -307,138 +297,124 @@ impl TransferServiceTrait for TransferService {
                     "Transfer with id {} not found",
                     input.transfer_id
                 )))
-            })?
-            .ok_or_else(|| {
-                error!("Transfer with id {} not found", input.transfer_id);
-                ErrorResponse::from(AppError::NotFound(format!(
-                    "Transfer with id {} not found",
-                    input.transfer_id
-                )))
             })?;
     
-        // Get sender's saldo
+        // Unwrap `existing_transfer` safely
+        let existing_transfer_value = existing_transfer
+            .clone()
+            .expect("Transfer not found");
+    
+        // Calculate the amount difference for updating balances
+        let amount_difference = input.transfer_amount - existing_transfer_value.transfer_amount;
+    
+        // Update the transfer record
+        let updated_transfer = self
+            .transfer_repository
+            .update(input)
+            .await
+            .map_err(AppError::from)
+            .map_err(ErrorResponse::from)?;
+    
+        // Update sender's balance
         let sender_saldo = self
             .saldo_repository
             .find_by_user_id(input.transfer_from)
             .await
-            .map_err(|err| {
-                error!("Failed to get sender saldo: {:?}", err);
-                ErrorResponse::from(AppError::NotFound("Failed to get sender saldo".to_string()))
+            .map_err(|_| {
+                ErrorResponse::from(AppError::NotFound(format!(
+                    "Saldo for Sender with User id {} not found",
+                    input.transfer_from
+                )))
             })?
-            .ok_or_else(|| {
-                ErrorResponse::from(AppError::NotFound("Sender saldo not found".to_string()))
-            })?;
+            .unwrap(); // Handle unwrap properly
     
-      
-        if sender_saldo.total_balance < input.transfer_amount {
-            return Err(ErrorResponse::from(AppError::NotFound(
-                "Insufficient balance for transfer".to_string(),
-            )));
+        let sender_new_balance = sender_saldo.total_balance - amount_difference;
+    
+        let sender_balance_update = UpdateSaldoBalance {
+            withdraw_amount: None,
+            withdraw_time: None,
+            user_id: input.transfer_from,
+            total_balance: sender_new_balance,
+        };
+    
+        if let Err(db_err) = self
+            .saldo_repository
+            .update_balance(&sender_balance_update)
+            .await
+        {
+            error!("Failed to update sender saldo balance: {}", db_err);
+    
+            // Rollback transfer update
+            let existing_transfer_update = UpdateTransferRequest {
+                transfer_id: input.transfer_id,
+                transfer_from: existing_transfer_value.transfer_from.clone(),
+                transfer_to: existing_transfer_value.transfer_to.clone(),
+                transfer_amount: existing_transfer_value.transfer_amount.clone(),
+            };
+    
+            self.transfer_repository
+                .update(&existing_transfer_update) // Rollback to original transfer details
+                .await
+                .map_err(AppError::from)
+                .map_err(ErrorResponse::from)?;
+    
+            return Err(ErrorResponse::from(AppError::from(db_err)));
         }
     
-        // Get receiver's saldo
+        // Update receiver's balance
         let receiver_saldo = self
             .saldo_repository
             .find_by_user_id(input.transfer_to)
             .await
-            .map_err(|err| {
-                error!("Failed to get receiver saldo: {:?}", err);
-                ErrorResponse::from(AppError::NotFound("Failed to get receiver saldo".to_string()))
+            .map_err(|_| {
+                ErrorResponse::from(AppError::NotFound(format!(
+                    "Saldo for Receiver with User id {} not found",
+                    input.transfer_to
+                )))
             })?
-            .ok_or_else(|| {
-                ErrorResponse::from(AppError::NotFound("Receiver saldo not found".to_string()))
-            })?;
+            .unwrap(); // Handle unwrap properly
     
-        // Calculate new balances
-        let sender_new_balance = sender_saldo.total_balance - input.transfer_amount;
-        let receiver_new_balance = receiver_saldo.total_balance + input.transfer_amount;
+        let receiver_new_balance = receiver_saldo.total_balance + amount_difference;
     
-   
-        let update_transfer = match self.transfer_repository.update(input).await {
-            Ok(transfer) => transfer,
-            Err(err) => {
-                error!("Failed to update transfer: {:?}", err);
-                return Err(ErrorResponse::from(AppError::from(err)));
-            }
+        let receiver_balance_update = UpdateSaldoBalance {
+            withdraw_amount: None,
+            withdraw_time: None,
+            user_id: input.transfer_to,
+            total_balance: receiver_new_balance,
         };
     
-      
-        if let Err(err) = self
+        if let Err(db_err) = self
             .saldo_repository
-            .update_balance(&UpdateSaldoBalance {
-                withdraw_amount: None, 
-                withdraw_time: None,  
-                user_id: input.transfer_from,
-                total_balance: sender_new_balance,
-            })
+            .update_balance(&receiver_balance_update)
             .await
         {
-            error!("Failed to update sender saldo: {:?}", err);
-            
-            if let Err(rollback_err) = self
-                .transfer_repository
-                .update_amount(&UpdateTransferAmountRequest {
-                    transfer_id: input.transfer_id,
-                    transfer_amount: existing_transfer.transfer_amount,
-                })
+            error!("Failed to update receiver saldo balance: {}", db_err);
+    
+            // Rollback transfer update
+            let existing_transfer_update = UpdateTransferRequest {
+                transfer_id: input.transfer_id,
+                transfer_from: existing_transfer_value.transfer_from.clone(),
+                transfer_to: existing_transfer_value.transfer_to.clone(),
+                transfer_amount: existing_transfer_value.transfer_amount.clone(),
+            };
+    
+            self.transfer_repository
+                .update(&existing_transfer_update) // Rollback to original transfer details
                 .await
-            {
-                error!("Failed to rollback transfer: {:?}", rollback_err);
-            }
-            return Err(ErrorResponse::from(AppError::NotFound(
-                "Failed to update sender saldo".to_string(),
-            )));
+                .map_err(AppError::from)
+                .map_err(ErrorResponse::from)?;
+    
+            return Err(ErrorResponse::from(AppError::from(db_err)));
         }
     
-        
-        if let Err(err) = self
-            .saldo_repository
-            .update_balance(&UpdateSaldoBalance {
-                withdraw_amount: None, 
-                withdraw_time: None,  
-                user_id: input.transfer_to,
-                total_balance: receiver_new_balance,
-            })
-            .await
-        {
-            error!("Failed to update receiver saldo: {:?}", err);
-            
-            if let Err(rollback_err) = self
-                .transfer_repository
-                .update_amount(&UpdateTransferAmountRequest {
-                    transfer_id: input.transfer_id,
-                    transfer_amount: existing_transfer.transfer_amount,
-                })
-                .await
-            {
-                error!("Failed to rollback transfer: {:?}", rollback_err);
-            }
-            if let Err(rollback_err) = self
-                .saldo_repository
-                .update_balance(&UpdateSaldoBalance {
-                    withdraw_amount: None, 
-                    withdraw_time: None,  
-                    user_id: input.transfer_from,
-                    total_balance: sender_saldo.total_balance,
-                })
-                .await
-            {
-                error!("Failed to rollback sender balance: {:?}", rollback_err);
-            }
-            return Err(ErrorResponse::from(AppError::NotFound(
-                "Failed to update receiver saldo".to_string(),
-            )));
-        }
-    
-       
         Ok(ApiResponse {
             status: "success".to_string(),
-            message: "Transfer and saldo updates successful".to_string(),
-            data: Some(TransferResponse::from(update_transfer)),
+            message: "Transfer updated successfully".to_string(),
+            data: Some(TransferResponse::from(updated_transfer)),
         })
     }
-
-
+    
+    
     async fn delete_transfer(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse> {
         let user = self.user_repository.find_by_id(id).await.map_err(|_| {
             ErrorResponse::from(AppError::NotFound(format!("User with id {} not found", id)))
