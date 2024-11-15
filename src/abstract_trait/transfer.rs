@@ -29,6 +29,6 @@ pub trait TransferServiceTrait {
     async fn get_transfer_users(&self, id: i32) -> Result<ApiResponse<Option<Vec<TransferResponse>>>, ErrorResponse>;
     async fn get_transfer_user(&self, id: i32) -> Result<ApiResponse<Option<TransferResponse>>, ErrorResponse> ;
     async fn create_transfer(&self, input: &CreateTransferRequest) -> Result<ApiResponse<TransferResponse>, ErrorResponse>;
-    async fn update_transfer(&self, input: &UpdateTransferRequest) -> Result<ApiResponse<Option<TransferResponse>>, ErrorResponse> ;
+    async fn update_transfer(&self, input: &UpdateTransferRequest) -> Result<ApiResponse<TransferResponse>, ErrorResponse> ;
     async fn delete_transfer(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse>;
 }
