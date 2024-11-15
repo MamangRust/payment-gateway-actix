@@ -29,14 +29,12 @@ impl CreateTopupRequest {
         }
 
         if payment_method_validator(&self.topup_method.to_owned()) {
-            return Err("Topup method not found".to_string()); 
+            return Err("Topup method not found".to_string());
         }
-        
 
         Ok(())
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateTopupRequest {
@@ -65,7 +63,28 @@ impl UpdateTopupRequest {
         }
 
         if payment_method_validator(&self.topup_method.to_owned()) {
-            return Err("Topup method not found".to_string()); 
+            return Err("Topup method not found".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateTopupAmount {
+    pub topup_id: i32,
+    pub topup_amount: i32,
+}
+
+
+impl UpdateTopupAmount {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.topup_id <= 0 {
+            return Err("Top-up ID must be a positive integer".to_string());
+        }
+
+        if self.topup_amount <= 50000 {
+            return Err("Topup amount must be greater than or equal to 50000".to_string());
         }
 
         Ok(())

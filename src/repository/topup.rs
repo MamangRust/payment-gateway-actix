@@ -4,7 +4,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set
 };
 
-use crate::{abstract_trait::topup::TopupRepositoryTrait, domain::request::topup::{CreateTopupRequest, UpdateTopupRequest}, entities::topups};
+use crate::{abstract_trait::topup::TopupRepositoryTrait, domain::request::topup::{CreateTopupRequest, UpdateTopupAmount, UpdateTopupRequest}, entities::topups};
 
 
 
@@ -69,6 +69,18 @@ impl TopupRepositoryTrait for TopupRepository {
         topup_record.topup_amount = Set(input.topup_amount);
         topup_record.topup_method = Set(input.topup_method.clone());
         topup_record.topup_time = Set(Utc::now().naive_utc());
+
+        topup_record.update(&self.db_pool).await
+    }
+
+    async fn update_amount(&self, input: &UpdateTopupAmount) -> Result<topups::Model, DbErr>{
+        let mut topup_record: topups::ActiveModel = topups::Entity::find_by_id(input.topup_id)
+            .one(&self.db_pool)
+            .await?
+            .ok_or(DbErr::RecordNotFound("Topup not found".to_owned()))?
+            .into();
+
+        topup_record.topup_amount = Set(input.topup_amount);
 
         topup_record.update(&self.db_pool).await
     }

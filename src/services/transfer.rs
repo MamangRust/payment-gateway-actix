@@ -204,7 +204,7 @@ impl TransferServiceTrait for TransferService {
         {
             error!("Failed to update saldo balance for sender: {}", db_err);
             self.transfer_repository
-                .delete(transfer.transfer_id) // Corrected rollback
+                .delete(transfer.transfer_id)
                 .await
                 .map_err(AppError::from)
                 .map_err(ErrorResponse::from)?;
@@ -212,10 +212,10 @@ impl TransferServiceTrait for TransferService {
             return Err(ErrorResponse::from(AppError::from(db_err)));
         }
 
-        // Receiver's saldo adjustment
+        
         let receiver_saldo = self
             .saldo_repository
-            .find_by_user_id(input.transfer_to) // Corrected to use transfer_to
+            .find_by_user_id(input.transfer_to) 
             .await
             .map_err(|_| {
                 ErrorResponse::from(AppError::NotFound(format!(
@@ -299,7 +299,7 @@ impl TransferServiceTrait for TransferService {
                 )))
             })?;
     
-        // Unwrap `existing_transfer` safely
+       
         let existing_transfer_value = existing_transfer
             .clone()
             .expect("Transfer not found");

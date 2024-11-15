@@ -2,7 +2,7 @@ use std::sync::Arc;
 use sea_orm::DbErr;
 use async_trait::async_trait;
 
-use crate::{domain::{request::topup::{CreateTopupRequest, UpdateTopupRequest}, response::{topup::TopupResponse, ApiResponse, ErrorResponse}}, entities::topups};
+use crate::{domain::{request::topup::{CreateTopupRequest, UpdateTopupAmount, UpdateTopupRequest}, response::{topup::TopupResponse, ApiResponse, ErrorResponse}}, entities::topups};
 
 
 
@@ -24,6 +24,8 @@ pub trait TopupRepositoryTrait {
     async fn create(&self, input: &CreateTopupRequest) -> Result<topups::Model, DbErr>;
     
     async fn update(&self, input: &UpdateTopupRequest) -> Result<topups::Model, DbErr>;
+
+    async fn update_amount(&self, input: &UpdateTopupAmount) -> Result<topups::Model, DbErr>;
     
     async fn delete(&self, id: i32) -> Result<(), DbErr>;
 }
@@ -35,6 +37,6 @@ pub trait TopupServiceTrait {
     async fn get_topup_users(&self, id: i32) -> Result<ApiResponse<Option<Vec<TopupResponse>>>, ErrorResponse>;
     async fn get_topup_user(&self, id: i32) -> Result<ApiResponse<Option<TopupResponse>>, ErrorResponse> ;
     async fn create_topup(&self, input: &CreateTopupRequest) -> Result<ApiResponse<TopupResponse>, ErrorResponse>;
-    async fn update_topup(&self, input: &UpdateTopupRequest) -> Result<ApiResponse<Option<TopupResponse>>, ErrorResponse>;
+    async fn update_topup(&self, input: &UpdateTopupRequest) -> Result<ApiResponse<TopupResponse>, ErrorResponse>;
     async fn delete_topup(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse>;
 }
