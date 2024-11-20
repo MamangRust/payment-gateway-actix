@@ -17,14 +17,13 @@ impl CreateTransferRequest {
             return Err("Transfer to must be a positive integer".to_string());
         }
 
-        if self.transfer_amount <= 0 {
-            return Err("Transfer amount must be greater than zero".to_string());
+        if self.transfer_amount < 50000 {
+            return Err("Transfer amount must be at least 50,000".to_string());
         }
 
         Ok(())
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateTransferRequest {
@@ -48,17 +47,16 @@ impl UpdateTransferRequest {
             return Err("Transfer to must be a positive integer".to_string());
         }
 
-        if self.transfer_amount <= 0 {
-            return Err("Transfer amount must be greater than zero".to_string());
+        if self.transfer_amount < 50000 {
+            return Err("Transfer amount must be at least 50,000".to_string());
         }
 
         Ok(())
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UpdateTransferAmountRequest{
+pub struct UpdateTransferAmountRequest {
     pub transfer_id: i32,
     pub transfer_amount: i32,
 }
@@ -68,7 +66,6 @@ impl UpdateTransferAmountRequest {
         if self.transfer_id <= 0 {
             return Err("Transfer ID must be a positive integer".to_string());
         }
-
 
         if self.transfer_amount <= 0 {
             return Err("Transfer amount must be greater than zero".to_string());

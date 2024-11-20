@@ -54,7 +54,7 @@ impl SaldoServiceTrait for SaldoService {
     async fn get_saldo(
         &self,
         id: i32,
-    ) -> Result<ApiResponse<Option<SaldoResponse>>, ErrorResponse>{
+    ) -> Result<ApiResponse<Option<SaldoResponse>>, ErrorResponse> {
         let saldo = self
             .saldo_repository
             .find_by_id(id)
@@ -102,6 +102,16 @@ impl SaldoServiceTrait for SaldoService {
             )
         };
 
+        if saldo_responses.is_none() {
+            let response = ApiResponse {
+                status: "success".to_string(),
+                data: None,
+                message: format!("No saldo found for user with id {}", id),
+            };
+
+            return Ok(response);
+        }
+
         let response = ApiResponse {
             status: "success".to_string(),
             data: saldo_responses,
@@ -130,11 +140,18 @@ impl SaldoServiceTrait for SaldoService {
             .flatten()
             .map(SaldoResponse::from);
 
-        // Create the response object
-        let response = ApiResponse {
-            status: "success".to_string(),
-            data: saldo,
-            message: "Success".to_string(),
+        let response = if saldo.is_none() {
+            ApiResponse {
+                status: "success".to_string(),
+                data: None,
+                message: format!("No saldo found for user with id {}", id),
+            }
+        } else {
+            ApiResponse {
+                status: "success".to_string(),
+                data: saldo,
+                message: "Success".to_string(),
+            }
         };
 
         Ok(response)
@@ -163,8 +180,6 @@ impl SaldoServiceTrait for SaldoService {
             })?;
 
         info!("Saldo created successfully for user_id: {}", input.user_id);
-
-        
 
         let saldo = self
             .saldo_repository
@@ -237,16 +252,9 @@ impl SaldoServiceTrait for SaldoService {
     }
 
     async fn delete_saldo(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse> {
-        let user = self
-            .user_repository
-            .find_by_id(id)
-            .await
-            .map_err(|_| {
-                ErrorResponse::from(AppError::NotFound(format!(
-                    "User with id {} not found",
-                    id
-                )))
-            })?;
+        let user = self.user_repository.find_by_id(id).await.map_err(|_| {
+            ErrorResponse::from(AppError::NotFound(format!("User with id {} not found", id)))
+        })?;
 
         let existing_saldo = self
             .saldo_repository

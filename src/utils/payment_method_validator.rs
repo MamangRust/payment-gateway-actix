@@ -23,6 +23,5 @@ pub fn payment_method_validator(payment_method: &str) -> bool {
         "paypal",
     ];
 
-    let payment_method_lower = payment_method.to_lowercase();
-    payment_rules.iter().any(|&rule| rule == payment_method_lower)
+    !payment_rules.contains(&payment_method)
 }

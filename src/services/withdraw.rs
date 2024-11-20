@@ -52,6 +52,11 @@ impl WithdrawServiceTrait for WithdrawService {
             .map(|withdraw| WithdrawResponse::from(withdraw))
             .collect();
 
+        info!(
+            "Successfully fetched {} withdrawals",
+            withdraw_response.len()
+        );
+
         Ok(ApiResponse {
             status: "success".to_string(),
             message: "Withdraw retrieved successfully".to_string(),
@@ -71,12 +76,14 @@ impl WithdrawServiceTrait for WithdrawService {
             .map_err(ErrorResponse::from)?;
 
         if let Some(withdraw) = withdraw {
+            info!("Successfully retrieved withdraw with ID: {}", id);
             Ok(ApiResponse {
                 status: "success".to_string(),
                 message: "Withdraw retrieved successfully".to_string(),
                 data: Some(WithdrawResponse::from(withdraw)),
             })
         } else {
+            error!("Withdraw with ID {} not found", id);
             Err(ErrorResponse::from(AppError::NotFound(format!(
                 "Saldo with id {} not found",
                 id
@@ -88,35 +95,47 @@ impl WithdrawServiceTrait for WithdrawService {
         &self,
         id: i32,
     ) -> Result<ApiResponse<Option<Vec<WithdrawResponse>>>, ErrorResponse> {
+        // Check if the user exists
         let _user = self.user_repository.find_by_id(id).await.map_err(|_| {
             ErrorResponse::from(AppError::NotFound(format!("User with id {} not found", id)))
         })?;
-    
-        
-        let transfer = self
+
+        let withdraw = self
             .withdraw_repository
             .find_by_users(id)
             .await
             .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
-    
-       
-        let transfer_response: Option<Vec<WithdrawResponse>> = transfer.map(|transfers| {
-            transfers
-                .into_iter()
-                .map(WithdrawResponse::from)
-                .collect()
-        });
-    
+
+        let withdraw_response: Option<Vec<WithdrawResponse>> = match withdraw {
+            Some(withdrawals) if !withdrawals.is_empty() => Some(
+                withdrawals
+                    .into_iter()
+                    .map(WithdrawResponse::from)
+                    .collect(),
+            ),
+            _ => None,
+        };
+
+        if withdraw_response.is_none() {
+            let response = ApiResponse {
+                status: "success".to_string(),
+                data: None,
+                message: format!("No withdraw found for user with id {}", id),
+            };
+
+            return Ok(response);
+        }
+
         let response = ApiResponse {
             status: "success".to_string(),
-            data: transfer_response,
+            data: withdraw_response,
             message: "Success".to_string(),
         };
-    
+
         Ok(response)
     }
-    
+
     async fn get_withdraw_user(
         &self,
         id: i32,
@@ -133,48 +152,78 @@ impl WithdrawServiceTrait for WithdrawService {
             .map_err(ErrorResponse::from)?
             .map(WithdrawResponse::from);
 
-        // Create the response object
-        let response = ApiResponse {
-            status: "success".to_string(),
-            data: withdraw,
-            message: "Success".to_string(),
-        };
+        match withdraw {
+            Some(withdraw) => {
+                info!("Successfully retrieved withdraw for user with id {}", id);
 
-        Ok(response)
+                Ok(ApiResponse {
+                    status: "success".to_string(),
+                    data: Some(withdraw),
+                    message: "Success".to_string(),
+                })
+            }
+            None => {
+                info!("No withdraw found for user with id {}", id);
+                Err(ErrorResponse::from(AppError::NotFound(format!(
+                    "Topup with user id {} not found",
+                    id
+                ))))
+            }
+        }
     }
 
     async fn create_withdraw(
         &self,
         input: &CreateWithdrawRequest,
     ) -> Result<ApiResponse<WithdrawResponse>, ErrorResponse> {
+        info!("Creating withdraw for user_id: {}", input.user_id);
+
         if let Err(validation_err) = input.validate() {
-            error!("Validation failed for topup create: {}", validation_err);
+            error!("Validation failed for withdraw create: {}", validation_err);
             return Err(ErrorResponse::from(AppError::ValidationError(
                 validation_err,
             )));
         }
+        info!("Validation passed for withdraw creation");
 
         let saldo = self
             .saldo_repository
             .find_by_user_id(input.user_id)
             .await
             .map_err(|_| {
+                error!("Saldo with user_id {} not found", input.user_id);
                 ErrorResponse::from(AppError::NotFound(format!(
                     "Saldo with user_id {} not found",
                     input.user_id
                 )))
             })?;
 
-        
         let saldo_ref = saldo.as_ref().ok_or_else(|| {
+            error!("Saldo not found for user_id: {}", input.user_id);
             ErrorResponse::from(AppError::NotFound("Saldo not found".to_string()))
         })?;
+
+        info!(
+            "Saldo found for user_id: {}. Current balance: {}",
+            input.user_id, saldo_ref.total_balance
+        );
+
+        if saldo_ref.total_balance < input.withdraw_amount {
+            error!(
+                "Insufficient balance for user_id: {}. Attempted withdrawal: {}",
+                input.user_id, input.withdraw_amount
+            );
+            return Err(ErrorResponse::from(AppError::ValidationError(
+                "Insufficient balance".to_string(),
+            )));
+        }
+        info!("User has sufficient balance for withdrawal");
 
         let new_total_balance = saldo_ref.total_balance - input.withdraw_amount;
 
         let _update_saldo_balance = self
             .saldo_repository
-            .update_balance(&UpdateSaldoBalance {
+            .update_saldo_withdraw(&UpdateSaldoWithdraw {
                 user_id: input.user_id,
                 withdraw_amount: Some(input.withdraw_amount),
                 withdraw_time: Some(Utc::now().naive_utc()),
@@ -184,6 +233,11 @@ impl WithdrawServiceTrait for WithdrawService {
             .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
+        info!(
+            "Saldo balance updated for user_id: {}. New balance: {}",
+            input.user_id, new_total_balance
+        );
+
         let withdraw_create_result = self
             .withdraw_repository
             .create(&input)
@@ -191,27 +245,16 @@ impl WithdrawServiceTrait for WithdrawService {
             .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
 
-        match withdraw_create_result {
-            withdraw => {
-                let _update_saldo = self
-                    .saldo_repository
-                    .update_balance(&UpdateSaldoBalance {
-                        user_id: input.user_id,
-                        withdraw_amount: Some(input.withdraw_amount),
-                        withdraw_time: Some(Utc::now().naive_utc()),
-                        total_balance: saldo_ref.total_balance, // No move here
-                    })
-                    .await
-                    .map_err(AppError::from)
-                    .map_err(ErrorResponse::from)?;
+        info!(
+            "Withdraw created successfully for user_id: {}",
+            input.user_id
+        );
 
-                Ok(ApiResponse {
-                    status: "success".to_string(),
-                    message: "Withdraw created successfully".to_string(),
-                    data: withdraw.into(),
-                })
-            }
-        }
+        Ok(ApiResponse {
+            status: "success".to_string(),
+            message: "Withdraw created successfully".to_string(),
+            data: withdraw_create_result.into(),
+        })
     }
 
     async fn update_withdraw(
@@ -227,7 +270,7 @@ impl WithdrawServiceTrait for WithdrawService {
 
         let _withdraw = self
             .withdraw_repository
-            .find_by_id(input.withdraw_id) // Assuming `withdraw_id` exists in the request
+            .find_by_id(input.withdraw_id)
             .await
             .map_err(|_| {
                 ErrorResponse::from(AppError::NotFound(format!(
@@ -253,43 +296,37 @@ impl WithdrawServiceTrait for WithdrawService {
 
         let new_total_balance = saldo_ref.total_balance - input.withdraw_amount;
 
-       
         let updated_withdraw = self
             .withdraw_repository
-            .update(&input) 
+            .update(&input)
             .await
             .map_err(AppError::from)
             .map_err(ErrorResponse::from);
 
-      
         if let Err(err) = updated_withdraw {
-           
             let _rollback_saldo = self
                 .saldo_repository
-                .update_balance(&UpdateSaldoBalance {
+                .update_saldo_withdraw(&UpdateSaldoWithdraw {
                     user_id: input.user_id,
-                    withdraw_amount: None, 
-                    withdraw_time: None,  
+                    withdraw_amount: None,
+                    withdraw_time: None,
                     total_balance: saldo_ref.total_balance,
                 })
                 .await
                 .map_err(AppError::from)
                 .map_err(ErrorResponse::from)?;
 
-            
             error!("Rollback: Saldo reverted due to withdraw update failure");
 
-           
             return Err(err);
         }
 
-      
         let _update_saldo = self
             .saldo_repository
-            .update_balance(&UpdateSaldoBalance {
+            .update_saldo_withdraw(&UpdateSaldoWithdraw {
                 user_id: input.user_id,
                 withdraw_amount: Some(input.withdraw_amount),
-                withdraw_time: Some(Utc::now().naive_utc()), 
+                withdraw_time: Some(Utc::now().naive_utc()),
                 total_balance: new_total_balance,
             })
             .await
@@ -299,7 +336,7 @@ impl WithdrawServiceTrait for WithdrawService {
         Ok(ApiResponse {
             status: "success".to_string(),
             message: "Withdraw updated successfully".to_string(),
-            data: Some(updated_withdraw.unwrap().into()), 
+            data: Some(updated_withdraw.unwrap().into()),
         })
     }
 

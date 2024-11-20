@@ -191,8 +191,6 @@ impl TransferServiceTrait for TransferService {
         let sender_balance = sender_saldo.unwrap().total_balance - input.transfer_amount;
 
         let request_sender_balance = UpdateSaldoBalance {
-            withdraw_amount: None,
-            withdraw_time: None,
             user_id: input.transfer_from,
             total_balance: sender_balance,
         };
@@ -212,10 +210,9 @@ impl TransferServiceTrait for TransferService {
             return Err(ErrorResponse::from(AppError::from(db_err)));
         }
 
-        
         let receiver_saldo = self
             .saldo_repository
-            .find_by_user_id(input.transfer_to) 
+            .find_by_user_id(input.transfer_to)
             .await
             .map_err(|_| {
                 ErrorResponse::from(AppError::NotFound(format!(
@@ -227,8 +224,6 @@ impl TransferServiceTrait for TransferService {
         let receiver_balance = receiver_saldo.unwrap().total_balance + input.transfer_amount;
 
         let request_receiver_balance = UpdateSaldoBalance {
-            withdraw_amount: None,
-            withdraw_time: None,
             user_id: input.transfer_to,
             total_balance: receiver_balance,
         };
@@ -262,9 +257,11 @@ impl TransferServiceTrait for TransferService {
         // Validate input
         if let Err(validation_err) = input.validate() {
             error!("Validation failed for transfer update: {}", validation_err);
-            return Err(ErrorResponse::from(AppError::ValidationError(validation_err)));
+            return Err(ErrorResponse::from(AppError::ValidationError(
+                validation_err,
+            )));
         }
-    
+
         // Retrieve the existing transfer
         let transfer = self
             .transfer_repository
@@ -282,10 +279,10 @@ impl TransferServiceTrait for TransferService {
                     input.transfer_id
                 )))
             })?;
-    
+
         // Calculate the difference in transfer amount
         let amount_difference = input.transfer_amount as i64 - transfer.transfer_amount as i64;
-    
+
         // Update sender's saldo
         let sender_saldo = self
             .saldo_repository
@@ -303,22 +300,20 @@ impl TransferServiceTrait for TransferService {
                     transfer.transfer_from
                 )))
             })?;
-    
+
         let new_sender_balance = sender_saldo.total_balance - amount_difference as i32;
-    
+
         if new_sender_balance < 0 {
             return Err(ErrorResponse::from(AppError::ValidationError(
                 "Insufficient balance for sender".to_string(),
             )));
         }
-    
+
         let update_sender_balance = UpdateSaldoBalance {
-            withdraw_amount: None,
-            withdraw_time: None,
             user_id: transfer.transfer_from,
             total_balance: new_sender_balance,
         };
-    
+
         if let Err(db_err) = self
             .saldo_repository
             .update_balance(&update_sender_balance)
@@ -327,7 +322,7 @@ impl TransferServiceTrait for TransferService {
             error!("Failed to update sender's saldo: {}", db_err);
             return Err(ErrorResponse::from(AppError::from(db_err)));
         }
-    
+
         // Update receiver's saldo
         let receiver_saldo = self
             .saldo_repository
@@ -345,31 +340,27 @@ impl TransferServiceTrait for TransferService {
                     transfer.transfer_to
                 )))
             })?;
-    
+
         let new_receiver_balance = receiver_saldo.total_balance + amount_difference as i32;
-    
+
         let update_receiver_balance = UpdateSaldoBalance {
-            withdraw_amount: None,
-            withdraw_time: None,
             user_id: transfer.transfer_to,
             total_balance: new_receiver_balance,
         };
-    
+
         if let Err(db_err) = self
             .saldo_repository
             .update_balance(&update_receiver_balance)
             .await
         {
             error!("Failed to update receiver's saldo: {}", db_err);
-    
+
             // Rollback sender's saldo update
             let rollback_sender_balance = UpdateSaldoBalance {
-                withdraw_amount: None,
-                withdraw_time: None,
                 user_id: transfer.transfer_from,
                 total_balance: sender_saldo.total_balance,
             };
-    
+
             self.saldo_repository
                 .update_balance(&rollback_sender_balance)
                 .await
@@ -377,10 +368,10 @@ impl TransferServiceTrait for TransferService {
                     error!("Failed to rollback sender's saldo update: {}", rollback_err);
                 })
                 .ok();
-    
+
             return Err(ErrorResponse::from(AppError::from(db_err)));
         }
-    
+
         // Update the transfer record
         let updated_transfer = self
             .transfer_repository
@@ -388,16 +379,14 @@ impl TransferServiceTrait for TransferService {
             .await
             .map_err(AppError::from)
             .map_err(ErrorResponse::from)?;
-    
+
         Ok(ApiResponse {
             status: "success".to_string(),
             message: "Transfer updated successfully".to_string(),
             data: TransferResponse::from(updated_transfer),
         })
     }
-    
-    
-    
+
     async fn delete_transfer(&self, id: i32) -> Result<ApiResponse<()>, ErrorResponse> {
         let user = self.user_repository.find_by_id(id).await.map_err(|_| {
             ErrorResponse::from(AppError::NotFound(format!("User with id {} not found", id)))

@@ -25,7 +25,6 @@ impl WithdrawRepositoryTrait for WithdrawRepository {
         withdraws::Entity::find_by_id(id).one(&self.db_pool).await
     }
 
-   
     async fn find_by_users(&self, id: i32) -> Result<Option<Vec<withdraws::Model>>, DbErr> {
         let results = withdraws::Entity::find()
             .filter(withdraws::Column::UserId.eq(id))
@@ -34,7 +33,6 @@ impl WithdrawRepositoryTrait for WithdrawRepository {
         Ok(Some(results))
     }
 
-    
     async fn find_by_user(&self, id: i32) -> Result<Option<withdraws::Model>, DbErr> {
         withdraws::Entity::find()
             .filter(withdraws::Column::UserId.eq(id))
@@ -42,29 +40,32 @@ impl WithdrawRepositoryTrait for WithdrawRepository {
             .await
     }
 
-  
     async fn create(&self, input: &CreateWithdrawRequest) -> Result<withdraws::Model, DbErr> {
+        let withdraw_time_naive = input.withdraw_time.naive_utc();
+
         let new_withdraw = withdraws::ActiveModel {
             user_id: Set(input.user_id),
             withdraw_amount: Set(input.withdraw_amount),
-            
-            withdraw_time: Set(Utc::now().naive_utc()),
+            withdraw_time: Set(withdraw_time_naive),
             ..Default::default()
         };
+
         new_withdraw.insert(&self.db_pool).await
     }
 
-    
     async fn update(&self, input: &UpdateWithdrawRequest) -> Result<withdraws::Model, DbErr> {
-        let mut withdraw_record: withdraws::ActiveModel = withdraws::Entity::find_by_id(input.withdraw_id)
-            .one(&self.db_pool)
-            .await?
-            .ok_or(DbErr::RecordNotFound("Withdraw not found".to_owned()))?
-            .into();
+        let mut withdraw_record: withdraws::ActiveModel =
+            withdraws::Entity::find_by_id(input.withdraw_id)
+                .one(&self.db_pool)
+                .await?
+                .ok_or(DbErr::RecordNotFound("Withdraw not found".to_owned()))?
+                .into();
+
+        let withdraw_time_naive = input.withdraw_time.naive_utc();
 
         withdraw_record.withdraw_amount = Set(input.withdraw_amount);
-        
-        withdraw_record.withdraw_time = Set(Utc::now().naive_utc());
+
+        withdraw_record.withdraw_time = Set(withdraw_time_naive);
 
         withdraw_record.update(&self.db_pool).await
     }
@@ -81,3 +82,4 @@ impl WithdrawRepositoryTrait for WithdrawRepository {
         }
     }
 }
+
