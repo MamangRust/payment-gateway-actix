@@ -1,9 +1,13 @@
 use async_trait::async_trait;
-use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+};
 
-
-use crate::{abstract_trait::withdraw::WithdrawRepositoryTrait, domain::request::withdraw::{CreateWithdrawRequest, UpdateWithdrawRequest}, entities::withdraws};
+use crate::{
+    abstract_trait::withdraw::WithdrawRepositoryTrait,
+    domain::request::withdraw::{CreateWithdrawRequest, UpdateWithdrawRequest},
+    entities::withdraws,
+};
 
 pub struct WithdrawRepository {
     db_pool: DatabaseConnection,
@@ -82,4 +86,3 @@ impl WithdrawRepositoryTrait for WithdrawRepository {
         }
     }
 }
-

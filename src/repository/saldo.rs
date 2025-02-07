@@ -7,7 +7,9 @@ use sea_orm::{
 
 use crate::{
     abstract_trait::saldo::SaldoRepositoryTrait,
-    domain::request::saldo::{CreateSaldoRequest, UpdateSaldoBalance, UpdateSaldoRequest},
+    domain::request::saldo::{
+        CreateSaldoRequest, UpdateSaldoBalance, UpdateSaldoRequest, UpdateSaldoWithdraw,
+    },
     entities::saldo,
 };
 
@@ -46,7 +48,7 @@ impl SaldoRepositoryTrait for SaldoRepository {
             .filter(saldo::Column::UserId.eq(id))
             .all(&self.db_pool)
             .await
-            .map(|res| res.into_iter().map(Some).collect()) // Wrap each result in `Some` to match `Vec<Option<saldo::Model>>`
+            .map(|res| res.into_iter().map(Some).collect())
     }
 
     async fn create(&self, input: &CreateSaldoRequest) -> Result<saldo::Model, DbErr> {
@@ -65,8 +67,20 @@ impl SaldoRepositoryTrait for SaldoRepository {
             .ok_or(DbErr::RecordNotFound("Saldo not found".to_owned()))?
             .into();
 
-        saldo_record.total_balance = Set(input.total_balance);
-        saldo_record.withdraw_amount = Set(Some(input.withdraw_amount.unwrap_or_default()));
+        let current_balance = saldo_record.total_balance.take().unwrap_or(0);
+
+        let withdraw_amount = input.withdraw_amount.unwrap_or(0);
+
+        let updated_balance = current_balance - withdraw_amount;
+
+        if updated_balance < 50000 {
+            return Err(DbErr::Custom(
+                "Insufficient balance: Saldo cannot be less than 50000".to_string(),
+            ));
+        }
+
+        saldo_record.total_balance = Set(updated_balance);
+        saldo_record.withdraw_amount = Set(Some(withdraw_amount));
         saldo_record.withdraw_time =
             Set(Some(input.withdraw_time.unwrap_or(Utc::now().naive_utc())));
 
@@ -81,16 +95,33 @@ impl SaldoRepositoryTrait for SaldoRepository {
             .ok_or(DbErr::RecordNotFound("Saldo not found".to_owned()))?
             .into();
 
-        if let Some(withdraw_amount) = input.withdraw_amount {
-            saldo_record.withdraw_amount = Set(Some(withdraw_amount));
-        }
-
-       
-        if let Some(withdraw_time) = input.withdraw_time {
-            saldo_record.withdraw_time = Set(Some(withdraw_time));
-        }
-
         saldo_record.total_balance = Set(input.total_balance);
+
+        saldo_record.update(&self.db_pool).await
+    }
+
+    async fn update_saldo_withdraw(
+        &self,
+        input: &UpdateSaldoWithdraw,
+    ) -> Result<saldo::Model, DbErr> {
+        let mut saldo_record: saldo::ActiveModel = saldo::Entity::find()
+            .filter(saldo::Column::UserId.eq(input.user_id))
+            .one(&self.db_pool)
+            .await?
+            .ok_or(DbErr::RecordNotFound("Saldo not found".to_owned()))?
+            .into();
+
+        if let Some(withdraw_amount) = input.withdraw_amount {
+            let current_balance = saldo_record.total_balance.take().unwrap_or(0);
+
+            if current_balance < withdraw_amount {
+                return Err(DbErr::Custom("Insufficient balance".to_string()));
+            }
+
+            saldo_record.total_balance = Set(current_balance - withdraw_amount);
+            saldo_record.withdraw_amount = Set(Some(withdraw_amount));
+            saldo_record.withdraw_time = Set(input.withdraw_time.clone());
+        }
 
         saldo_record.update(&self.db_pool).await
     }

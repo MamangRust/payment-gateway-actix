@@ -6,7 +6,7 @@ use crate::{
     },
     domain::{
         request::{
-            saldo::UpdateSaldoBalance,
+            saldo::UpdateSaldoWithdraw,
             withdraw::{CreateWithdrawRequest, UpdateWithdrawRequest},
         },
         response::{withdraw::WithdrawResponse, ApiResponse, ErrorResponse},
@@ -95,7 +95,6 @@ impl WithdrawServiceTrait for WithdrawService {
         &self,
         id: i32,
     ) -> Result<ApiResponse<Option<Vec<WithdrawResponse>>>, ErrorResponse> {
-        // Check if the user exists
         let _user = self.user_repository.find_by_id(id).await.map_err(|_| {
             ErrorResponse::from(AppError::NotFound(format!("User with id {} not found", id)))
         })?;

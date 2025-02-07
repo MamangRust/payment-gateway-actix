@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
 };
 
-use crate::{abstract_trait::topup::TopupRepositoryTrait, domain::request::topup::{CreateTopupRequest, UpdateTopupAmount, UpdateTopupRequest}, entities::topups};
-
-
-
+use crate::{
+    abstract_trait::topup::TopupRepositoryTrait,
+    domain::request::topup::{CreateTopupRequest, UpdateTopupAmount, UpdateTopupRequest},
+    entities::topups,
+};
 
 pub struct TopupRepository {
     db_pool: DatabaseConnection,
@@ -29,15 +30,14 @@ impl TopupRepositoryTrait for TopupRepository {
         topups::Entity::find_by_id(id).one(&self.db_pool).await
     }
 
-    async fn find_by_users(&self, id: i32) -> Result<Vec<Option<topups::Model>>, DbErr>  {
+    async fn find_by_users(&self, id: i32) -> Result<Vec<Option<topups::Model>>, DbErr> {
         topups::Entity::find()
-        .filter(topups::Column::UserId.eq(id))
-        .all(&self.db_pool)
-        .await
-        .map(|res| res.into_iter().map(Some).collect()) 
+            .filter(topups::Column::UserId.eq(id))
+            .all(&self.db_pool)
+            .await
+            .map(|res| res.into_iter().map(Some).collect())
     }
 
-    
     async fn find_by_user(&self, id: i32) -> Result<Option<topups::Model>, DbErr> {
         topups::Entity::find()
             .filter(topups::Column::UserId.eq(id))
@@ -45,7 +45,6 @@ impl TopupRepositoryTrait for TopupRepository {
             .await
     }
 
-    
     async fn create(&self, input: &CreateTopupRequest) -> Result<topups::Model, DbErr> {
         let new_topup = topups::ActiveModel {
             user_id: Set(input.user_id),
@@ -58,7 +57,6 @@ impl TopupRepositoryTrait for TopupRepository {
         new_topup.insert(&self.db_pool).await
     }
 
-    
     async fn update(&self, input: &UpdateTopupRequest) -> Result<topups::Model, DbErr> {
         let mut topup_record: topups::ActiveModel = topups::Entity::find_by_id(input.topup_id)
             .one(&self.db_pool)
@@ -73,7 +71,7 @@ impl TopupRepositoryTrait for TopupRepository {
         topup_record.update(&self.db_pool).await
     }
 
-    async fn update_amount(&self, input: &UpdateTopupAmount) -> Result<topups::Model, DbErr>{
+    async fn update_amount(&self, input: &UpdateTopupAmount) -> Result<topups::Model, DbErr> {
         let mut topup_record: topups::ActiveModel = topups::Entity::find_by_id(input.topup_id)
             .one(&self.db_pool)
             .await?
@@ -84,7 +82,6 @@ impl TopupRepositoryTrait for TopupRepository {
 
         topup_record.update(&self.db_pool).await
     }
-    
 
     // Delete a topup record by user ID
     async fn delete(&self, id: i32) -> Result<(), DbErr> {

@@ -1,7 +1,7 @@
 use crate::{
     abstract_trait::{
         saldo::DynSaldoRepository,
-        topup::{DynTopupRepository,  TopupServiceTrait},
+        topup::{DynTopupRepository, TopupServiceTrait},
         user::DynUserRepository,
     },
     domain::{

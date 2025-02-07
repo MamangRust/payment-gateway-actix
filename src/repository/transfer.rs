@@ -1,8 +1,14 @@
+use crate::{
+    abstract_trait::transfer::TransferRepositoryTrait,
+    domain::request::transfer::{
+        CreateTransferRequest, UpdateTransferAmountRequest, UpdateTransferRequest,
+    },
+    entities::{transfers, Transfer},
+};
 use async_trait::async_trait;
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set}; 
-use crate::{
-    abstract_trait::transfer::TransferRepositoryTrait, domain::request::transfer::{CreateTransferRequest, UpdateTransferAmountRequest, UpdateTransferRequest}, entities::{transfers, Transfer}
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
 };
 
 pub struct TransferRepository {
@@ -21,19 +27,20 @@ impl TransferRepositoryTrait for TransferRepository {
         Transfer::find().all(&self.db_pool).await
     }
 
-   
     async fn find_by_id(&self, id: i32) -> Result<Option<transfers::Model>, DbErr> {
         Transfer::find_by_id(id).one(&self.db_pool).await
     }
 
-   
     async fn find_by_users(&self, id: i32) -> Result<Option<Vec<transfers::Model>>, DbErr> {
         let transfers = Transfer::find()
-            .filter(transfers::Column::TransferFrom.eq(id)
-                    .or(transfers::Column::TransferTo.eq(id)))
+            .filter(
+                transfers::Column::TransferFrom
+                    .eq(id)
+                    .or(transfers::Column::TransferTo.eq(id)),
+            )
             .all(&self.db_pool)
             .await?;
-        
+
         if transfers.is_empty() {
             Ok(None)
         } else {
@@ -43,8 +50,11 @@ impl TransferRepositoryTrait for TransferRepository {
 
     async fn find_by_user(&self, id: i32) -> Result<Option<transfers::Model>, DbErr> {
         Transfer::find()
-            .filter(transfers::Column::TransferFrom.eq(id)
-                    .or(transfers::Column::TransferTo.eq(id)))
+            .filter(
+                transfers::Column::TransferFrom
+                    .eq(id)
+                    .or(transfers::Column::TransferTo.eq(id)),
+            )
             .one(&self.db_pool)
             .await
     }
@@ -60,7 +70,6 @@ impl TransferRepositoryTrait for TransferRepository {
         new_transfer.insert(&self.db_pool).await
     }
 
-    
     async fn update(&self, input: &UpdateTransferRequest) -> Result<transfers::Model, DbErr> {
         let transfer = transfers::ActiveModel {
             transfer_id: Set(input.transfer_id),
@@ -73,8 +82,11 @@ impl TransferRepositoryTrait for TransferRepository {
         transfer.update(&self.db_pool).await
     }
 
-    async fn update_amount(&self, input: &UpdateTransferAmountRequest) -> Result<transfers::Model, DbErr>{
-        let transfer = transfers::ActiveModel{
+    async fn update_amount(
+        &self,
+        input: &UpdateTransferAmountRequest,
+    ) -> Result<transfers::Model, DbErr> {
+        let transfer = transfers::ActiveModel {
             transfer_id: Set(input.transfer_id),
             transfer_amount: Set(input.transfer_amount),
             ..Default::default()
@@ -83,8 +95,10 @@ impl TransferRepositoryTrait for TransferRepository {
         transfer.update(&self.db_pool).await
     }
 
-  
     async fn delete(&self, id: i32) -> Result<(), DbErr> {
-        Transfer::delete_by_id(id).exec(&self.db_pool).await.map(|_| ())
+        Transfer::delete_by_id(id)
+            .exec(&self.db_pool)
+            .await
+            .map(|_| ())
     }
 }

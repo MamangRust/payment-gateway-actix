@@ -6,7 +6,6 @@ use crate::abstract_trait::user::UserRepositoryTrait;
 use crate::domain::request::user::{CreateUserRequest, UpdateUserRequest};
 use crate::entities::{users, Users};
 
-
 pub struct UserRepository {
     db_pool: DatabaseConnection,
 }
@@ -26,7 +25,6 @@ impl UserRepositoryTrait for UserRepository {
             .await
     }
 
-
     async fn find_by_email_exists(&self, email: &str) -> Result<bool, DbErr> {
         let user_count = users::Entity::find()
             .filter(users::Column::Email.eq(email))
@@ -34,7 +32,6 @@ impl UserRepositoryTrait for UserRepository {
             .await?;
         Ok(user_count > 0)
     }
-
 
     async fn find_all(&self) -> Result<Vec<users::Model>, DbErr> {
         Users::find().all(&self.db_pool).await
@@ -85,7 +82,6 @@ impl UserRepositoryTrait for UserRepository {
             user.email = Set(email.clone());
         }
 
-       
         user.update(&self.db_pool).await
     }
 
